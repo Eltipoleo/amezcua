@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost/gym-api',
+        target: 'https://apigym-production.up.railway.app/index.php?url=', // Updated API URL
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       }

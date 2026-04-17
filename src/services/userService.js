@@ -1,5 +1,8 @@
 import { cacheService, abortManager } from "../utils/helpers";
 
+// URL MAESTRA apuntando a tu API en Railway
+const BASE_URL = "https://apigym-production.up.railway.app/index.php?url=";
+
 // Helper para obtener token actual
 const getAccessToken = () => localStorage.getItem('access_token');
 const setAccessToken = (token) => localStorage.setItem('access_token', token);
@@ -26,115 +29,18 @@ async function fetchWithAbort(url, options = {}, abortKey = null, isRetry = fals
     // Interceptor: Si el token expira (401)
     if (res.status === 401 && !isRetry) {
       console.log("[v0] Token expirado, intentando refrescar...");
-      let refreshRes = await fetch(`${API}/refresh.php`, {
+      let refreshRes = await fetch(`${BASE_URL}refresh`, {
         credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" }
       });
 
-      let refreshData = null;
-      if (!refreshRes.ok) {
-        refreshRes = await fetch(`${API}/refresh.php`, {
-          credentials: "include",
-          method: "GET"
-        });
-        if (refreshRes.ok) {
-          refreshData = await refreshRes.json();
-        }
+      if (refreshRes.ok) {
+         // Si el refresh funciona, reintentamos la petición original
+         return fetchWithAbort(url, options, abortKey, true);
       } else {
-        refreshData = await refreshRes.json();
+         throw new Error("Sesión expirada");
       }
-
-      const res = await fetch(`${API}/login.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ email, password })
-      });
-
-      const resUsuarios = await fetchWithAbort(`${API}/get_usuarios.php`, {
-        method: 'GET'
-      });
-
-      const resPublicaciones = await fetchWithAbort(`${API}/get_publicaciones.php`, {
-        method: 'GET'
-      });
-
-      return fetchWithAbort(`${API}/create_usuario.php`, {
-        method: "POST",
-        body: JSON.stringify({
-          nombre: usuario.nombre,
-          email: usuario.email,
-          password: usuario.password || "",
-          fecha_vencimiento: usuario.fecha_vencimiento
-        })
-      });
-
-      return fetchWithAbort(`${API}/update_usuarios.php`, {
-        method: "POST",
-        body: JSON.stringify({
-          id: usuario.id,
-          nombre: usuario.nombre,
-          email: usuario.email,
-          fecha_vencimiento: usuario.fecha_vencimiento
-        })
-      });
-
-      return fetchWithAbort(`${API}/add_tiempo.php`, {
-        method: "POST",
-        body: JSON.stringify({ id, dias })
-      });
-
-      return fetchWithAbort(`${API}/update_fecha.php`, {
-        method: "POST",
-        body: JSON.stringify({ id, fecha })
-      });
-
-      return fetchWithAbort(`${API}/delete_usuario.php`, {
-        method: "POST",
-        body: JSON.stringify({ id })
-      });
-
-      return fetchWithAbort(`${API}/user_settings.php?action=get_data`, { method: "GET" });
-
-      return fetchWithAbort(`${API}/user_settings.php?action=update_prefs`, {
-        method: "POST", body: JSON.stringify(prefs)
-      });
-
-      return fetchWithAbort(`${API}/user_settings.php?action=change_password`, {
-        method: "POST", body: JSON.stringify(passwords)
-      });
-
-      return fetchWithAbort(`${API}/user_settings.php?action=close_session`, {
-        method: "POST", body: JSON.stringify({ sesion_id })
-      });
-
-      const resRegister = await fetch(`${API}/register.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nombre, email, password })
-      });
-
-      const resVerificar = await fetch(`${API}/verificar_codigo.php`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, codigo })
-      });
-
-      const resRecoveryEmail = await fetch(`${API}/recover.php?action=request_email`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email })
-      });
-
-      const resRecoveryOTP = await fetch(`${API}/recover.php?action=request_otp`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, method })
-      });
-
-      const resResetPassword = await fetch(`${API}/recover.php?action=reset_password`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, method, auth_value, new_password })
-      });
     }
 
     if (!res.ok) {
@@ -161,16 +67,27 @@ async function fetchWithAbort(url, options = {}, abortKey = null, isRetry = fals
 }
 
 // =============================================
-// LOGIN
+// LOGIN (ACTUALIZADO PARA GUARDAR ID)
 // =============================================
 export const loginUsuario = async (email, password) => {
-  const res = await fetch(`/gym-api/login.php`, {
+  const res = await fetch(`${BASE_URL}login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify({ email, password })
   });
-  return res.json();
+
+  const data = await res.json();
+
+  // Si el login es exitoso, guardamos los datos críticos en el navegador
+  if (data.success) {
+    localStorage.setItem('access_token', data.access_token);
+    localStorage.setItem('userId', data.id); // <--- ESTO ES LO QUE NECESITA EL DASHBOARD
+    localStorage.setItem('rol', data.rol);
+    localStorage.setItem('userName', data.nombre);
+  }
+
+  return data;
 };
 
 // =============================================
@@ -184,7 +101,7 @@ export const obtenerUsuarios = async (forceRefresh = false) => {
   }
 
   try {
-    const res = await fetchWithAbort(`${API}/get_usuarios.php`, {
+    const res = await fetchWithAbort(`${BASE_URL}get_usuarios`, {
       method: 'GET'
     });
 
@@ -225,7 +142,7 @@ export const getUsuarios = obtenerUsuarios;
 // =============================================
 export const obtenerPublicaciones = async () => {
   try {
-    const res = await fetchWithAbort(`${API}/get_publicaciones.php`, {
+    const res = await fetchWithAbort(`${BASE_URL}get_publicaciones`, {
       method: 'GET'
     });
 
@@ -295,7 +212,7 @@ export const obtenerDashboardData = async () => {
 // =============================================
 export const crearUsuario = async (usuario) => {
   cacheService.invalidate("usuarios");
-  return fetchWithAbort(`/gym-api/create_usuario.php`, {
+  return fetchWithAbort(`${BASE_URL}create_usuario`, {
     method: "POST",
     body: JSON.stringify({
       nombre: usuario.nombre,
@@ -311,7 +228,7 @@ export const crearUsuario = async (usuario) => {
 // =============================================
 export const actualizarUsuario = async (usuario) => {
   cacheService.invalidate("usuarios");
-  return fetchWithAbort(`/gym-api/update_usuarios.php`, {
+  return fetchWithAbort(`${BASE_URL}update_usuarios`, {
     method: "POST",
     body: JSON.stringify({
       id: usuario.id,
@@ -327,7 +244,7 @@ export const actualizarUsuario = async (usuario) => {
 // =============================================
 export const addTiempo = async (id, dias) => {
   cacheService.invalidate("usuarios");
-  return fetchWithAbort(`/gym-api/add_tiempo.php`, {
+  return fetchWithAbort(`${BASE_URL}add_tiempo`, {
     method: "POST",
     body: JSON.stringify({ id, dias })
   });
@@ -338,7 +255,7 @@ export const addTiempo = async (id, dias) => {
 // =============================================
 export const updateFecha = async (id, fecha) => {
   cacheService.invalidate("usuarios");
-  return fetchWithAbort(`/gym-api/update_fecha.php`, {
+  return fetchWithAbort(`${BASE_URL}update_fecha`, {
     method: "POST",
     body: JSON.stringify({ id, fecha })
   });
@@ -349,7 +266,7 @@ export const updateFecha = async (id, fecha) => {
 // =============================================
 export const deleteUsuario = async (id) => {
   cacheService.invalidate("usuarios");
-  return fetchWithAbort(`/gym-api/delete_usuario.php`, {
+  return fetchWithAbort(`${BASE_URL}delete_usuario`, {
     method: "POST",
     body: JSON.stringify({ id })
   });
@@ -364,23 +281,23 @@ export const cancelarPeticiones = () => {
 
 // --- FUNCIONES DE CONFIGURACIÓN DE USUARIO ---
 export const getSettingsData = () => {
-  return fetchWithAbort(`/gym-api/user_settings.php?action=get_data`, { method: "GET" });
+  return fetchWithAbort(`${BASE_URL}user_settings&action=get_data`, { method: "GET" });
 };
 
 export const updatePreferences = (prefs) => {
-  return fetchWithAbort(`/gym-api/user_settings.php?action=update_prefs`, {
+  return fetchWithAbort(`${BASE_URL}user_settings&action=update_prefs`, {
     method: "POST", body: JSON.stringify(prefs)
   });
 };
 
 export const changePassword = (passwords) => {
-  return fetchWithAbort(`/gym-api/user_settings.php?action=change_password`, {
+  return fetchWithAbort(`${BASE_URL}user_settings&action=change_password`, {
     method: "POST", body: JSON.stringify(passwords)
   });
 };
 
 export const closeSession = (sesion_id) => {
-  return fetchWithAbort(`/gym-api/user_settings.php?action=close_session`, {
+  return fetchWithAbort(`${BASE_URL}user_settings&action=close_session`, {
     method: "POST", body: JSON.stringify({ sesion_id })
   });
 };
@@ -389,7 +306,7 @@ export const closeSession = (sesion_id) => {
 // REGISTRO PÚBLICO DE USUARIOS
 // =============================================
 export const registerUsuario = async (nombre, email, password) => {
-  const res = await fetch(`/gym-api/register.php`, {
+  const res = await fetch(`${BASE_URL}registro`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ nombre, email, password })
@@ -398,7 +315,7 @@ export const registerUsuario = async (nombre, email, password) => {
 };
 
 export const verificarCuenta = async (email, codigo) => {
-  const res = await fetch(`/gym-api/verificar_codigo.php`, {
+  const res = await fetch(`${BASE_URL}verificar_codigo`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, codigo })
@@ -407,10 +324,10 @@ export const verificarCuenta = async (email, codigo) => {
 };
 
 // =============================================
-// RECUPERACIÓN DE CONTRASEÑA (PARTE 7)
+// RECUPERACIÓN DE CONTRASEÑA
 // =============================================
 export const requestRecoveryEmail = async (email) => {
-  const res = await fetch(`/gym-api/recover.php?action=request_email`, {
+  const res = await fetch(`${BASE_URL}recover&action=request_email`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email })
   });
@@ -418,7 +335,7 @@ export const requestRecoveryEmail = async (email) => {
 };
 
 export const requestRecoveryOTP = async (email, method) => {
-  const res = await fetch(`/gym-api/recover.php?action=request_otp`, {
+  const res = await fetch(`${BASE_URL}recover&action=request_otp`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, method })
   });
@@ -426,9 +343,19 @@ export const requestRecoveryOTP = async (email, method) => {
 };
 
 export const resetPassword = async (email, method, auth_value, new_password) => {
-  const res = await fetch(`/gym-api/recover.php?action=reset_password`, {
+  const res = await fetch(`${BASE_URL}recover&action=reset_password`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, method, auth_value, new_password })
   });
   return res.json();
+};
+// Agrega esto al final de tu userService.js
+
+export const obtenerDatosPerfil = async () => {
+  // Usamos el ID del usuario que guardamos en localStorage al hacer login
+  const userId = localStorage.getItem('userId'); 
+  
+  return fetchWithAbort(`${BASE_URL}get_perfil&id=${userId}`, {
+    method: 'GET'
+  });
 };
